@@ -1,0 +1,17 @@
+{
+    "name": "HACHIMON — Os Oito Portões",
+    "short_name": "HACHIMON",
+    "description": "Tracker de treino híbrido com os Oito Portões: força, estética e capacidade de trabalho. O trabalho duro supera o talento.",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#040705",
+    "theme_color": "#040705",
+    "icons": [
+        {
+            "src": "assets/icon_512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

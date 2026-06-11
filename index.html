@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#040705">
+    <title>HACHIMON — Os Oito Portões. O trabalho duro supera o talento.</title>
+    <meta name="description" content="Tracker de treino híbrido com os Oito Portões: força, estética e capacidade de trabalho. Cada sessão registrada abre caminho até o próximo portão.">
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="HACHIMON">
+    <link rel="apple-touch-icon" href="assets/icon_512.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Noto+Serif+JP:wght@400;700;900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="aura" aria-hidden="true"></div>
+    <div class="watermark" aria-hidden="true">八門遁甲</div>
+
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-kanji">八門</span>
+            <span class="brand-name">HACHIMON</span>
+        </div>
+        <span class="topbar-date" id="topbar-date"></span>
+    </header>
+
+    <main class="shell">
+
+        <!-- ============ TELA: TREINO ============ -->
+        <section class="screen is-active" data-screen="treino" id="screen-treino">
+            <div class="t-hero">
+                <div class="hero-bg" aria-hidden="true"></div>
+                <span class="hero-kanji" id="treino-kanji" aria-hidden="true">拳</span>
+                <img class="hero-render" src="assets/guy_render.png" alt="" aria-hidden="true">
+                <div class="t-eyebrow">
+                    <b id="treino-weekday">TER</b>
+                    <span class="dot">/</span>
+                    <span id="hero-gate-label">PORTÃO 1 · 開門</span>
+                </div>
+                <h1 class="t-title" id="treino-title">UPPER A</h1>
+                <p class="t-foco" id="treino-foco">força · peito · costas</p>
+                <span class="t-sug" id="treino-sugerido">SUGERIDO: UA</span>
+            </div>
+
+            <div class="manifesto">
+                <p class="manifesto-text" id="manifesto-text">O trabalho duro supera o talento.</p>
+                <p class="manifesto-jp" id="manifesto-jp">努力は天才に勝る。</p>
+            </div>
+
+            <div class="segmented" role="tablist" aria-label="Escolher treino">
+                <button class="seg-btn is-active" data-treino="UA">UA<small>UPPER</small></button>
+                <button class="seg-btn" data-treino="LA">LA<small>LOWER</small></button>
+                <button class="seg-btn" data-treino="UB">UB<small>UPPER</small></button>
+                <button class="seg-btn" data-treino="LB">LB<small>LOWER</small></button>
+            </div>
+
+            <div class="day-banner" id="day-banner" hidden></div>
+
+            <div id="exercicios"></div>
+
+            <div id="finisher-wrap"></div>
+
+            <div class="save-bar">
+                <button class="btn-primary" id="btn-save">REGISTRAR SESSÃO</button>
+            </div>
+        </section>
+
+        <!-- ============ TELA: PROGRESSÃO ============ -->
+        <section class="screen" data-screen="progresso" id="screen-progresso">
+            <div class="sec-head">
+                <span class="sec-eyebrow">O TERMÔMETRO</span>
+                <h2 class="sec-title">Progressão <span class="sec-kanji">伸</span></h2>
+            </div>
+
+            <div class="prog-select-wrap">
+                <select id="prog-select" aria-label="Escolher exercício"></select>
+            </div>
+
+            <div class="prog-stats" id="prog-stats"></div>
+
+            <div class="prog-chart-wrap">
+                <div class="prog-chart-label" id="prog-chart-label">Melhor série · kg</div>
+                <div id="prog-chart"></div>
+            </div>
+
+            <div class="prog-history" id="prog-history"></div>
+        </section>
+
+        <!-- ============ TELA: PORTÕES ============ -->
+        <section class="screen" data-screen="portoes" id="screen-portoes">
+            <div class="g-hero">
+                <div class="g-hero-bg" aria-hidden="true"></div>
+                <div class="g-steam" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <span class="sec-eyebrow">八門遁甲 · OS OITO PORTÕES</span>
+                <div class="g-current" id="g-current">
+                    <span class="g-current-kanji" id="g-current-kanji">開</span>
+                    <div class="g-current-info">
+                        <span class="g-current-label">PORTÃO ATUAL</span>
+                        <h2 class="g-current-name" id="g-current-name">Kaimon</h2>
+                        <p class="g-current-pt" id="g-current-pt">Portão da Abertura</p>
+                    </div>
+                </div>
+                <div class="g-next" id="g-next">
+                    <div class="g-next-rail"><div class="g-next-bar" id="g-next-bar"></div></div>
+                    <p class="g-next-text" id="g-next-text">3 sessões até o próximo portão</p>
+                </div>
+            </div>
+
+            <p class="g-lore">Cada sessão pesada registrada é chakra acumulado. Os portões não se abrem
+                com talento — se abrem com presença. <em>O lótus de Konoha floresce duas vezes.</em></p>
+
+            <div class="gates" id="gates"></div>
+
+            <figure class="g-diagram">
+                <img src="assets/gates_diagram.jpg" alt="Diagrama dos Oito Portões no corpo humano" loading="lazy">
+                <figcaption>八門遁甲 — o mapa dos portões no corpo, do Kaimon (Abertura) ao Shimon (Morte).</figcaption>
+            </figure>
+
+            <div class="flames" id="flames">
+                <div class="flames-head">
+                    <span class="flames-kanji">炎</span>
+                    <div>
+                        <strong>Chamas da Juventude</strong>
+                        <p>Finishers completados — o que separa treino de treinamento.</p>
+                    </div>
+                </div>
+                <div class="flames-stats" id="flames-stats"></div>
+            </div>
+        </section>
+
+        <!-- ============ TELA: SEMANA ============ -->
+        <section class="screen" data-screen="semana" id="screen-semana">
+            <div class="sec-head">
+                <span class="sec-eyebrow">A CONSISTÊNCIA</span>
+                <h2 class="sec-title">Semana <span class="sec-kanji">週</span></h2>
+            </div>
+
+            <div class="week-count-box">
+                <div class="week-count-top">
+                    <span class="week-count-big"><span id="week-count">0</span>/4</span>
+                    <span class="week-count-label">treinos<br>pesados</span>
+                </div>
+                <div class="week-count-rail"><div class="week-count-bar" id="week-count-bar"></div></div>
+            </div>
+
+            <div class="week-grid" id="week-grid"></div>
+
+            <div class="week-info">
+                <span class="wi-label">Estrutura fixa da semana</span>
+                <div class="wi-val">TER UA · QUI LA · SEX UB · SÁB LB</div>
+                <p>Upper/Lower 2× — frequência 2 por músculo. A grade reseta toda segunda.</p>
+            </div>
+
+            <div class="week-leves">
+                <div class="leve-item">
+                    <span class="li-k">軽</span>
+                    <div><strong>Segunda</strong>
+                        <p>Cardio Zona 2 · 30–40 min. Constrói a base aeróbica que sustenta os portões.</p></div>
+                </div>
+                <div class="leve-item">
+                    <span class="li-k">休</span>
+                    <div><strong>Quarta &amp; Domingo</strong>
+                        <p>Descanso ou recuperação ativa: caminhada, mobilidade, Z2 leve. O corpo abre portão no silêncio.</p></div>
+                </div>
+            </div>
+
+            <div class="metodo">
+                <span class="wi-label">O método</span>
+                <div class="metodo-item">
+                    <strong>Double progression</strong>
+                    <p>Bateu o teto da faixa em TODAS as séries → sobe a carga e volta ao piso. Superiores: +2,5 kg. Inferiores e leg press: +5 kg. Halteres: próximo par. Máquinas: +1 placa (placa grande demais → fica 1 sessão extra no peso).</p>
+                </div>
+                <div class="metodo-item">
+                    <strong>Rampa no lift de força</strong>
+                    <p>Antes da 1ª série válida do primeiro exercício: barra×10 · 40%×6 · 60%×4 · 80%×2. Tira a decisão da cabeça de um cara cansado.</p>
+                </div>
+                <div class="metodo-item">
+                    <strong>Trava de segurança</strong>
+                    <p>2 sessões seguidas abaixo do piso da faixa já na 1ª série → reduz 10% e reconstrói. Em residência, estagnar geralmente é sono e estresse — não fraqueza.</p>
+                </div>
+                <div class="metodo-item">
+                    <strong>Deload</strong>
+                    <p>A cada 5–6 semanas: metade das séries, ~85–90% da carga, sem finishers. ANTECIPE para a semana brutal de plantões já conhecida — o calendário do hospital manda mais que o do treino. Gatilho reativo: sono &lt;6h por 3+ noites ou 2 sessões seguidas caindo.</p>
+                </div>
+            </div>
+
+            <div class="danger">
+                <button class="btn-danger" id="btn-clear">Apagar todos os registros</button>
+                <p class="week-total"><span id="week-total">0</span> sessões registradas no total</p>
+            </div>
+        </section>
+
+    </main>
+
+    <nav class="tabbar" aria-label="Navegação">
+        <button class="tab is-active" data-screen="treino"><span class="tab-k">鍛</span>Treino</button>
+        <button class="tab" data-screen="progresso"><span class="tab-k">伸</span>Progresso</button>
+        <button class="tab" data-screen="portoes"><span class="tab-k">門</span>Portões</button>
+        <button class="tab" data-screen="semana"><span class="tab-k">週</span>Semana</button>
+    </nav>
+
+    <div class="gate-overlay" id="gate-overlay" hidden>
+        <div class="go-inner">
+            <span class="go-kanji" id="go-kanji">開</span>
+            <span class="go-label">PORTÃO ABERTO</span>
+            <h3 class="go-name" id="go-name">Kaimon · Portão da Abertura</h3>
+            <p class="go-quote" id="go-quote">A juventude explode agora!</p>
+            <button class="btn-primary go-close" id="go-close">OSU!</button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
