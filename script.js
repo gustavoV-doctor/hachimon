@@ -610,7 +610,7 @@ function renderPortoes() {
                 <div class="gate-pt">${g.pt}</div>
                 <div class="gate-tech">${isOpen ? "✓ " : ""}${g.tech}</div>
             </div>
-            <span class="gate-req">${isOpen ? "ABERTO" : `${g.req} sessões`}</span>`;
+            <span class="gate-req">${isOpen ? "ABERTO" : `${g.req} ${g.req === 1 ? "sessão" : "sessões"}`}</span>`;
         wrap.appendChild(el);
     });
 
