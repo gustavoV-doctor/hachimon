@@ -1,8 +1,9 @@
 /* =========================================================
    HACHIMON 八門 — Os Oito Portões
-   Tracker de treino híbrido: força + estética + capacidade
-   de trabalho. Cada sessão registrada acumula chakra e abre
-   caminho até o próximo portão.
+   Planilha de treino híbrido: força + estética + capacidade
+   de trabalho. Sem campos de carga — a planilha é a referência,
+   o registro é "treino feito". Cada sessão registrada acumula
+   chakra e abre caminho até o próximo portão.
    Client-side puro · localStorage versionado · zero dependência
    ========================================================= */
 
@@ -16,7 +17,6 @@ const PROGRAM = {
         leve: [1],            // Seg: cardio Z2
         recuperacao: [0, 3]   // Dom e Qua: descanso / recuperação ativa
     },
-    est1RM: "Epley → peso * (1 + reps / 30)",
     treinos: {
         UA: {
             titulo: "UPPER A", foco: "supino pesado · costas espessas · ombro", kanji: "拳",
@@ -109,13 +109,11 @@ function slug(s) {
         .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 const TREINO_KEYS = ["UA", "LA", "UB", "LB"];
-const EXERCISES = {}; // id -> { ...ex, treino, idx }
 TREINO_KEYS.forEach((t) => {
     PROGRAM.treinos[t].exercicios.forEach((ex, idx) => {
         ex.id = slug(ex.nome);
         ex.treino = t;
         ex.idx = idx;
-        EXERCISES[ex.id] = ex;
     });
 });
 
@@ -144,22 +142,12 @@ const WEEKDAY_FULL = ["DOMINGO", "SEGUNDA", "TERÇA", "QUARTA", "QUINTA", "SEXTA
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
-/** Formata número no padrão BR (vírgula decimal, até 1 casa). */
-function fmt(n) {
-    if (n == null || isNaN(n)) return "—";
-    const r = Math.round(n * 10) / 10;
-    return String(r).replace(".", ",");
-}
-
 /** Chave de data local YYYY-MM-DD (sem fuso surpresa). */
 function dateKey(d) {
     const x = (d instanceof Date) ? d : new Date(d);
     return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
 }
 const todayKey = () => dateKey(new Date());
-
-/** Epley. */
-const epley = (carga, reps) => (Number(carga) || 0) * (1 + (Number(reps) || 0) / 30);
 
 /* ----- Calendário ----- */
 function startOfWeekMonday(date) {
@@ -178,17 +166,18 @@ function dayType(date) {
     return "recuperacao";
 }
 
-/** Treino sugerido hoje (no dia pesado: o do dia; senão: o próximo pesado). */
-function suggestedTreino(date) {
-    const dow = date.getDay();
-    if (dow in PROGRAM.agenda.pesados) return PROGRAM.agenda.pesados[dow];
-    for (let i = 1; i <= 7; i++) {
+/** Próximo treino pesado a partir de hoje (inclusive). */
+function nextHeavyInfo(date) {
+    for (let i = 0; i <= 7; i++) {
         const d = new Date(date);
         d.setDate(date.getDate() + i);
-        if (d.getDay() in PROGRAM.agenda.pesados) return PROGRAM.agenda.pesados[d.getDay()];
+        if (d.getDay() in PROGRAM.agenda.pesados) {
+            return { treino: PROGRAM.agenda.pesados[d.getDay()], dow: d.getDay(), hoje: i === 0 };
+        }
     }
-    return "UA";
+    return { treino: "UA", dow: 2, hoje: false };
 }
+const suggestedTreino = (date) => nextHeavyInfo(date).treino;
 
 function pickManifesto() {
     const d = new Date();
@@ -201,34 +190,34 @@ function pickManifesto() {
 ========================================================= */
 const STORE_KEY = "hachimon:sessoes:v1";
 const CELEBRATED_KEY = "hachimon:portao-celebrado:v1";
+const CARDIO_KEY = "hachimon:cardio:v1";
+const STRIKES_KEY = "hachimon:riscados:v1";
+
+function lsGet(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+}
+function lsSet(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); return true; }
+    catch (e) { console.warn("Hachimon: falha ao salvar.", e); return false; }
+}
+
 const store = {
     load() {
-        try {
-            const raw = localStorage.getItem(STORE_KEY);
-            const arr = raw ? JSON.parse(raw) : [];
-            if (!Array.isArray(arr)) return [];
-            // Item malformado não pode derrubar o app inteiro.
-            return arr.filter((s) => s && typeof s === "object"
-                && s.series && typeof s.series === "object"
-                && (s.treino in PROGRAM.treinos));
-        } catch (e) {
-            console.warn("Hachimon: falha ao ler registros, seguindo em memória.", e);
-            return [];
-        }
+        const arr = lsGet(STORE_KEY, []);
+        if (!Array.isArray(arr)) return [];
+        // Item malformado não pode derrubar o app inteiro.
+        return arr.filter((s) => s && typeof s === "object" && (s.treino in PROGRAM.treinos) && s.data);
     },
-    save(arr) {
-        try {
-            localStorage.setItem(STORE_KEY, JSON.stringify(arr));
-            return true;
-        } catch (e) {
-            console.warn("Hachimon: falha ao salvar registros.", e);
-            return false;
-        }
-    },
+    save(arr) { return lsSet(STORE_KEY, arr); },
     clear() {
         try {
             localStorage.removeItem(STORE_KEY);
             localStorage.removeItem(CELEBRATED_KEY);
+            localStorage.removeItem(CARDIO_KEY);
+            localStorage.removeItem(STRIKES_KEY);
         } catch (e) { /* noop */ }
     },
     getCelebrated() {
@@ -251,57 +240,37 @@ function commitSession(sess) {
     sessions.sort((a, b) => a.id - b.id);
     return store.save(sessions);
 }
-
-/* ----- Consultas ----- */
 function todaysSession(treino) {
     const k = todayKey();
     return sessions.find((s) => dateKey(s.data) === k && s.treino === treino) || null;
 }
 
-function historyOf(exId) {
-    return sessions
-        .filter((s) => s.series[exId] && s.series[exId].some((x) => x && (x.carga != null || x.reps != null)))
-        .sort((a, b) => a.id - b.id);
+/* ----- Cardio: lista de dias (dateKey) com cardio feito ----- */
+function cardioList() {
+    const arr = lsGet(CARDIO_KEY, []);
+    return Array.isArray(arr) ? arr.filter((d) => typeof d === "string") : [];
 }
-
-/** Última sessão COMPLETA anterior a hoje (referência "último: …"). */
-function lastEntry(exId) {
-    const list = historyOf(exId).slice().reverse();
+const cardioDoneToday = () => cardioList().includes(todayKey());
+function toggleCardioToday() {
     const k = todayKey();
-    for (const s of list) if (dateKey(s.data) !== k) return s;
-    return null;
+    let list = cardioList();
+    if (list.includes(k)) list = list.filter((d) => d !== k);
+    else list.push(k);
+    return lsSet(CARDIO_KEY, list);
 }
 
-/** Métrica do exercício: 'tempo' (porTempo) | 'kg' (tem carga) | 'reps' (peso corporal). */
-function exMetric(ex) {
-    if (ex.porTempo) return "tempo";
-    const any = sessions.some((s) =>
-        s.series[ex.id] && s.series[ex.id].some((x) => x && x.carga != null && x.carga > 0));
-    return any ? "kg" : "reps";
+/* ----- Riscados: exercícios marcados na planilha (só o dia de hoje) ----- */
+function strikesToday() {
+    const obj = lsGet(STRIKES_KEY, null);
+    if (!obj || obj.dia !== todayKey() || !Array.isArray(obj.itens)) return [];
+    return obj.itens;
 }
-
-function bestSet(series, metric) {
-    const valid = (series || []).filter((x) => x && (x.reps != null || x.carga != null));
-    if (!valid.length) return null;
-    if (metric === "kg") return valid.reduce((b, x) => (epley(x.carga, x.reps) > epley(b.carga, b.reps) ? x : b));
-    return valid.reduce((b, x) => ((x.reps || 0) > (b.reps || 0) ? x : b));
-}
-
-function setValue(set, metric) {
-    if (!set) return 0;
-    if (metric === "kg") return Number(set.carga) || 0;
-    return Number(set.reps) || 0;
-}
-
-/** Motor de sobrecarga: bateu o topo da faixa em TODAS as séries na última sessão? */
-function shouldIncreaseLoad(ex) {
-    if (!ex.reps) return false;
-    const last = lastEntry(ex.id);
-    if (!last) return false;
-    const sets = (last.series[ex.id] || []).filter((x) => x && x.reps != null);
-    if (sets.length < ex.series) return false;
-    const topo = ex.reps[1];
-    return sets.every((x) => x.reps >= topo);
+function toggleStrike(exId) {
+    const itens = strikesToday();
+    const i = itens.indexOf(exId);
+    if (i >= 0) itens.splice(i, 1); else itens.push(exId);
+    lsSet(STRIKES_KEY, { dia: todayKey(), itens });
+    return itens;
 }
 
 /* =========================================================
@@ -309,16 +278,14 @@ function shouldIncreaseLoad(ex) {
 ========================================================= */
 const totalSessions = () => sessions.length;
 
-/** Índice (0-8) do portão atual: quantos portões estão abertos. */
+/** Quantos portões estão abertos (0-8). */
 function gatesOpen() {
     const n = totalSessions();
     let open = 0;
     for (const g of GATES) if (n >= g.req) open = g.n;
     return open;
 }
-/** Portão atual (último aberto) ou null se nenhum. */
 const currentGate = () => gatesOpen() > 0 ? GATES[gatesOpen() - 1] : null;
-/** Próximo portão a abrir ou null se todos abertos. */
 const nextGate = () => gatesOpen() < 8 ? GATES[gatesOpen()] : null;
 
 /* =========================================================
@@ -327,41 +294,9 @@ const nextGate = () => gatesOpen() < 8 ? GATES[gatesOpen()] : null;
 const state = {
     screen: "treino",
     treino: suggestedTreino(new Date()),
-    progEx: null,
     finisherDone: false,
-    draft: {},          // treino -> { series, finisher } digitado e ainda não salvo
-    domTreino: null,    // treino cujos cards estão materializados no DOM
     renderedDay: todayKey()
 };
-
-/** Lê os inputs atuais do DOM (mesma coleta do save). */
-function collectInputs(t) {
-    const treino = PROGRAM.treinos[t];
-    const series = {};
-    let hasData = false;
-    treino.exercicios.forEach((ex) => {
-        const rows = $$(`.set-row[data-ex="${ex.id}"]`);
-        if (!rows.length) return;
-        series[ex.id] = rows.map((row) => {
-            const cargaEl = $(".set-carga", row);
-            const repsEl = $(".set-reps", row);
-            const carga = cargaEl && cargaEl.value !== ""
-                ? parseFloat(cargaEl.value.replace(",", ".")) : null;
-            const reps = repsEl && repsEl.value !== "" ? parseInt(repsEl.value, 10) : null;
-            if (carga != null || reps != null) hasData = true;
-            return { carga: isNaN(carga) ? null : carga, reps: isNaN(reps) ? null : reps };
-        });
-    });
-    return { series, hasData };
-}
-
-/** Guarda o que está digitado como rascunho antes de re-renderizar. */
-function collectDraft(t) {
-    if (!t || !PROGRAM.treinos[t]) return;
-    const got = collectInputs(t);
-    if (!Object.keys(got.series).length) return;
-    state.draft[t] = { series: got.series, finisher: state.finisherDone };
-}
 
 /* =========================================================
    RENDER — TOPO E NAV
@@ -377,21 +312,17 @@ function setScreen(name) {
     document.body.dataset.screen = name;
     $$(".screen").forEach((s) => s.classList.toggle("is-active", s.dataset.screen === name));
     $$(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.screen === name));
-    if (name === "progresso") renderProgresso();
-    if (name === "semana") renderSemana();
     if (name === "treino") renderTreino();
     if (name === "portoes") renderPortoes();
+    if (name === "semana") renderSemana();
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
 }
 
 /* =========================================================
-   RENDER — TELA TREINO
+   RENDER — TELA TREINO (planilha)
 ========================================================= */
 function renderTreino() {
-    // Preserva o que está digitado e não foi salvo antes de destruir o DOM.
-    collectDraft(state.domTreino);
-
     const now = new Date();
     const tipo = dayType(now);
     const t = state.treino;
@@ -404,9 +335,10 @@ function renderTreino() {
     $("#hero-gate-label").textContent = cg
         ? `PORTÃO ${cg.n} · ${cg.kanji} ${cg.nome}`
         : "NENHUM PORTÃO ABERTO — AINDA";
-    const sug = suggestedTreino(now);
-    const sugPrefix = tipo === "pesado" ? "SUGERIDO" : "PRÓXIMO PESADO";
-    $("#treino-sugerido").textContent = `${sugPrefix}: ${sug} · ${PROGRAM.treinos[sug].titulo}`;
+    const prox = nextHeavyInfo(now);
+    $("#treino-sugerido").textContent = prox.hoje
+        ? `HOJE: ${prox.treino} · ${PROGRAM.treinos[prox.treino].titulo}`
+        : `PRÓXIMO PESADO: ${prox.treino} · ${WEEKDAY_FULL[prox.dow]}`;
     $("#treino-title").textContent = treino.titulo;
     $("#treino-foco").textContent = treino.foco;
 
@@ -428,7 +360,7 @@ function renderTreino() {
             banner.className = "day-banner is-leve";
             banner.innerHTML = `<span class="db-kanji">軽</span>
                 <div><strong>DIA LEVE</strong>
-                <p>Cardio Zona 2 · 30–40 min. A base aeróbica é o que sustenta os portões. Registro de carga abaixo é opcional.</p></div>`;
+                <p>Cardio Zona 2 · 30–40 min. A base aeróbica é o que sustenta os portões. Marque no card lá embaixo.</p></div>`;
         } else {
             banner.className = "day-banner is-rec";
             banner.innerHTML = `<span class="db-kanji">休</span>
@@ -437,65 +369,21 @@ function renderTreino() {
         }
     }
 
-    // Cards de exercício — rascunho digitado tem precedência sobre a sessão salva
+    // Planilha de exercícios — toque risca o que já foi feito (vale só hoje)
     const saved = todaysSession(t);
-    const draft = state.draft[t] || null;
-    state.finisherDone = draft ? !!draft.finisher : !!(saved && saved.finisher);
+    state.finisherDone = !!(saved && saved.finisher);
+    const struck = strikesToday();
     const wrap = $("#exercicios");
     wrap.innerHTML = "";
 
     treino.exercicios.forEach((ex, i) => {
-        const metric = exMetric(ex);
-        const last = lastEntry(ex.id);
-        const lastSets = last ? (last.series[ex.id] || []) : [];
-        const savedSets = draft ? (draft.series[ex.id] || []) : (saved ? (saved.series[ex.id] || []) : []);
-        const subir = shouldIncreaseLoad(ex);
-        const esquema = ex.porTempo ? `${ex.series} × tempo`
-            : `${ex.series} × ${ex.reps[0]}–${ex.reps[1]}`;
-
+        const isStruck = struck.includes(ex.id);
         const card = document.createElement("article");
-        card.className = "card reveal";
+        card.className = "card sheet reveal" + (isStruck ? " is-struck" : "");
         card.style.transitionDelay = (i * 45) + "ms";
-
-        let setsHTML = "";
-        for (let s = 0; s < ex.series; s++) {
-            const sv = savedSets[s] || {};
-            const lv = lastSets[s];
-            const ref = lv && (lv.carga != null || lv.reps != null)
-                ? `últ. ${refText(lv, metric, true)}`
-                : "primeira vez";
-            const cargaVal = sv.carga != null ? String(sv.carga).replace(".", ",") : "";
-            const repsVal = sv.reps != null ? sv.reps : "";
-
-            if (metric === "tempo") {
-                setsHTML += `
-                <div class="set-row" data-ex="${ex.id}" data-set="${s}">
-                    <span class="set-idx">${s + 1}</span>
-                    <label class="set-field set-field--solo">
-                        <input class="set-reps" type="number" inputmode="numeric" min="0"
-                            placeholder="0" value="${repsVal}" aria-label="Tempo em segundos série ${s + 1}">
-                        <span class="set-unit">seg</span>
-                    </label>
-                    <span class="set-ref">${ref}</span>
-                </div>`;
-            } else {
-                setsHTML += `
-                <div class="set-row" data-ex="${ex.id}" data-set="${s}">
-                    <span class="set-idx">${s + 1}</span>
-                    <label class="set-field">
-                        <input class="set-carga" type="text" inputmode="decimal" autocomplete="off"
-                            placeholder="0" value="${cargaVal}" aria-label="Carga série ${s + 1}">
-                        <span class="set-unit">kg</span>
-                    </label>
-                    <label class="set-field">
-                        <input class="set-reps" type="number" inputmode="numeric" min="0"
-                            placeholder="0" value="${repsVal}" aria-label="Reps série ${s + 1}">
-                        <span class="set-unit">reps</span>
-                    </label>
-                    <span class="set-ref">${ref}</span>
-                </div>`;
-            }
-        }
+        card.dataset.ex = ex.id;
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-pressed", isStruck ? "true" : "false");
 
         card.innerHTML = `
             <div class="card-head">
@@ -503,21 +391,32 @@ function renderTreino() {
                     <span class="card-tag">${ex.musculo} · ${ex.tipo}</span>
                     <h3 class="card-name">${ex.nome}</h3>
                 </div>
-                <span class="card-scheme">${esquema}</span>
+                <span class="card-scheme">${ex.series} × ${ex.reps[0]}–${ex.reps[1]}</span>
             </div>
             <div class="card-rest">descanso ${ex.descanso}</div>
             ${ex.nota ? `<p class="card-nota">${ex.nota}</p>` : ""}
-            ${subir ? `<div class="badge-up"><span class="badge-up-dot"></span>SUBA A CARGA — bateu o topo em tudo</div>`
-                : (last ? `<div class="card-goal">Meta: repetir a carga e ganhar reps até o topo da faixa.</div>` : "")}
-            <div class="sets">${setsHTML}</div>`;
+            <span class="card-check" aria-hidden="true">✓</span>`;
+
+        card.addEventListener("click", () => {
+            const itens = toggleStrike(ex.id);
+            const on = itens.includes(ex.id);
+            card.classList.toggle("is-struck", on);
+            card.setAttribute("aria-pressed", on ? "true" : "false");
+        });
 
         wrap.appendChild(card);
     });
 
-    state.domTreino = t;
+    // Selo de sessão já registrada hoje
+    if (saved) {
+        const done = document.createElement("div");
+        done.className = "done-note";
+        done.innerHTML = `押忍 — <b>${t}</b> já registrado hoje. Salvar de novo só atualiza o finisher.`;
+        wrap.appendChild(done);
+    }
 
-    // Finisher do dia
     renderFinisher(treino);
+    renderCardio();
 
     // Revela cards
     requestAnimationFrame(() => $$("#exercicios .reveal").forEach((el) => el.classList.add("is-visible")));
@@ -545,42 +444,45 @@ function renderFinisher(treino) {
     });
 }
 
-/** Texto da referência de uma série, conforme métrica. */
-function refText(set, metric, compact = false) {
-    if (metric === "tempo") return `${set.reps ?? "—"}s`;
-    if (metric === "reps") return `${set.reps ?? "—"} reps`;
-    const c = set.carga != null ? `${fmt(set.carga)}kg` : "—";
-    const r = set.reps != null ? `${set.reps}` : "—";
-    return compact ? `${c}×${r}` : `${c} × ${r}`;
+/* Card de cardio — pros dias em que o treino vira cardio de manhã. */
+function renderCardio() {
+    const wrap = $("#cardio-wrap");
+    const done = cardioDoneToday();
+    wrap.innerHTML = `
+        <div class="cardio${done ? " is-done" : ""}">
+            <span class="cardio-eyebrow">BASE AERÓBICA · 軽</span>
+            <h3 class="cardio-name">Cardio Zona 2</h3>
+            <span class="cardio-dur">30–40 min · vale de manhã, vale em dia corrido</span>
+            <p class="cardio-desc">Esteira inclinada, bike ou corrida leve — ritmo de conversa. Não abre portão,
+            mas sustenta todos eles. Conta separado do treino pesado.</p>
+            <button class="cardio-check${done ? " is-done" : ""}" id="cardio-check" type="button">
+                ${done ? "✓ CARDIO FEITO HOJE" : "MARCAR CARDIO DE HOJE"}
+            </button>
+        </div>`;
+    $("#cardio-check").addEventListener("click", () => {
+        toggleCardioToday();
+        renderCardio();
+        toast(cardioDoneToday() ? "Cardio registrado. A chama não apaga. 炎" : "Cardio de hoje desmarcado.");
+    });
 }
 
-/** Coleta os inputs e salva a sessão atual. */
+/** Registra o treino do dia como feito. */
 function saveSession() {
     const t = state.treino;
-    const { series, hasData } = collectInputs(t);
-
-    if (!hasData) {
-        toast("Registre ao menos uma série antes de salvar.");
-        return;
-    }
-
     const before = gatesOpen();
     const existing = todaysSession(t);
     const sess = {
         id: existing ? existing.id : Date.now(),
         data: existing ? existing.data : new Date().toISOString(),
         treino: t,
-        series,
         finisher: state.finisherDone
     };
 
     const ok = commitSession(sess);
-    if (ok) delete state.draft[t];
-    toast(ok ? "Sessão registrada. 押忍!" : "Salvo só nesta sessão (storage indisponível).");
+    toast(ok ? (existing ? "Sessão de hoje atualizada. 押忍!" : "Treino registrado. 押忍!")
+        : "Salvo só nesta sessão (storage indisponível).");
     renderTreino();
-    buildProgressoOptions();
 
-    // Abriu portão novo?
     const after = gatesOpen();
     if (ok && after > before && after > store.getCelebrated()) {
         celebrateGate(GATES[after - 1]);
@@ -598,7 +500,6 @@ function renderPortoes() {
 
     document.body.classList.toggle("gate-max", open >= 8);
 
-    // Herói: portão atual
     if (cur) {
         $("#g-current-kanji").textContent = cur.kanji;
         $("#g-current-name").textContent = cur.nome;
@@ -606,10 +507,9 @@ function renderPortoes() {
     } else {
         $("#g-current-kanji").textContent = "門";
         $("#g-current-name").textContent = "Fechado";
-        $("#g-current-pt").textContent = "Registre a primeira sessão pesada para abrir o Kaimon.";
+        $("#g-current-pt").textContent = "Registre o primeiro treino feito para abrir o Kaimon.";
     }
 
-    // Barra até o próximo
     if (next) {
         const base = cur ? cur.req : 0;
         const pct = Math.max(0, Math.min(100, ((n - base) / (next.req - base)) * 100));
@@ -622,7 +522,6 @@ function renderPortoes() {
         $("#g-next-text").textContent = `${n} sessões · TODOS OS PORTÕES ABERTOS`;
     }
 
-    // Lista dos 8
     const wrap = $("#gates");
     wrap.innerHTML = "";
     GATES.forEach((g, i) => {
@@ -643,7 +542,7 @@ function renderPortoes() {
         wrap.appendChild(el);
     });
 
-    // Chamas da Juventude (finishers)
+    // Chamas da Juventude (finishers + cardio)
     const done = sessions.filter((s) => s.finisher).length;
     const rate = sessions.length ? Math.round((done / sessions.length) * 100) : 0;
     $("#flames-stats").innerHTML = `
@@ -654,6 +553,14 @@ function renderPortoes() {
         <div class="stat-box">
             <span class="stat-label">Taxa de chama</span>
             <span class="stat-val">${rate}%</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-label">Cardios 軽</span>
+            <span class="stat-val">${cardioList().length}</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-label">Sessões totais</span>
+            <span class="stat-val">${sessions.length}</span>
         </div>`;
 
     requestAnimationFrame(() => $$("#screen-portoes .reveal").forEach((el) => el.classList.add("is-visible")));
@@ -672,148 +579,18 @@ function celebrateGate(gate) {
 }
 
 /* =========================================================
-   RENDER — TELA PROGRESSÃO
-========================================================= */
-function buildProgressoOptions() {
-    const sel = $("#prog-select");
-    if (!sel) return;
-    const prev = state.progEx || sel.value;
-    sel.innerHTML = "";
-    TREINO_KEYS.forEach((t) => {
-        const og = document.createElement("optgroup");
-        og.label = `${t} · ${PROGRAM.treinos[t].titulo}`;
-        PROGRAM.treinos[t].exercicios.forEach((ex) => {
-            const o = document.createElement("option");
-            o.value = ex.id;
-            o.textContent = ex.nome;
-            og.appendChild(o);
-        });
-        sel.appendChild(og);
-    });
-    if (prev && EXERCISES[prev]) sel.value = prev;
-    state.progEx = sel.value;
-}
-
-function renderProgresso() {
-    if (!state.progEx) buildProgressoOptions();
-    const ex = EXERCISES[state.progEx];
-    if (!ex) return;
-
-    const metric = exMetric(ex);
-    const hist = historyOf(ex.id);
-
-    const unitLabel = metric === "tempo" ? "segundos" : metric === "reps" ? "reps" : "kg";
-    $("#prog-chart-label").textContent = `Melhor série · ${unitLabel}`;
-
-    const points = hist.map((s) => {
-        const best = bestSet(s.series[ex.id], metric);
-        return { date: s.data, best, value: setValue(best, metric) };
-    }).filter((p) => p.best && (metric !== "kg" || p.value > 0));
-
-    const statsWrap = $("#prog-stats");
-    const chartWrap = $("#prog-chart");
-    const histWrap = $("#prog-history");
-
-    if (!points.length) {
-        statsWrap.innerHTML = "";
-        chartWrap.innerHTML = `<p class="empty">Sem registros ainda.<br>Treine, registre e o número aparece aqui.</p>`;
-        histWrap.innerHTML = "";
-        return;
-    }
-
-    const first = points[0];
-    const latest = points[points.length - 1];
-
-    const firstCmp = metric === "kg" ? epley(first.best.carga, first.best.reps) : first.value;
-    const lastCmp = metric === "kg" ? epley(latest.best.carga, latest.best.reps) : latest.value;
-    const varPct = firstCmp > 0 ? ((lastCmp - firstCmp) / firstCmp) * 100 : 0;
-    const varSign = varPct > 0 ? "+" : "";
-    const varClass = varPct > 0 ? "up" : varPct < 0 ? "down" : "flat";
-
-    const bestNow = refText(latest.best, metric, true);
-    const e1 = metric === "kg" ? Math.round(epley(latest.best.carga, latest.best.reps)) : null;
-
-    statsWrap.innerHTML = `
-        <div class="stat-box">
-            <span class="stat-label">Melhor série atual</span>
-            <span class="stat-val">${bestNow}</span>
-        </div>
-        <div class="stat-box">
-            <span class="stat-label">1RM estimado</span>
-            <span class="stat-val">${e1 != null ? fmt(e1) + " kg" : "—"}</span>
-        </div>
-        <div class="stat-box">
-            <span class="stat-label">Variação${metric === "kg" ? " (1RM)" : ""}</span>
-            <span class="stat-val var-${varClass}">${varSign}${fmt(varPct)}%</span>
-        </div>`;
-
-    chartWrap.innerHTML = buildChart(points, metric);
-
-    histWrap.innerHTML = `<div class="hist-head">Histórico</div>` +
-        points.slice().reverse().slice(0, 16).map((p) => {
-            const d = new Date(p.date);
-            const date = `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
-            const e = metric === "kg" ? ` · 1RM ${fmt(Math.round(epley(p.best.carga, p.best.reps)))}` : "";
-            return `<div class="hist-row">
-                <span class="hist-date">${date}</span>
-                <span class="hist-val">${refText(p.best, metric)}</span>
-                <span class="hist-e1">${e}</span>
-            </div>`;
-        }).join("");
-}
-
-/** Gráfico de linha em SVG feito à mão — visual Hachimon. */
-function buildChart(points, metric) {
-    const W = 320, H = 150, padL = 8, padR = 8, padT = 14, padB = 22;
-    const vals = points.map((p) => p.value);
-    let min = Math.min(...vals), max = Math.max(...vals);
-    if (min === max) { min = Math.max(0, min - 1); max = max + 1; }
-    const span = max - min || 1;
-
-    const n = points.length;
-    const x = (i) => padL + (n === 1 ? (W - padL - padR) / 2 : (i / (n - 1)) * (W - padL - padR));
-    const y = (v) => padT + (1 - (v - min) / span) * (H - padT - padB);
-
-    const coords = points.map((p, i) => ({ cx: x(i), cy: y(p.value), v: p.value }));
-    const line = coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.cx.toFixed(1)},${c.cy.toFixed(1)}`).join(" ");
-    const area = `${line} L${coords[n - 1].cx.toFixed(1)},${H - padB} L${coords[0].cx.toFixed(1)},${H - padB} Z`;
-
-    const dots = coords.map((c, i) =>
-        `<circle cx="${c.cx.toFixed(1)}" cy="${c.cy.toFixed(1)}" r="${i === n - 1 ? 4 : 2.6}"
-            class="${i === n - 1 ? "chart-dot chart-dot--last" : "chart-dot"}"/>`).join("");
-
-    const lastLabel = `<text x="${coords[n - 1].cx.toFixed(1)}" y="${(coords[n - 1].cy - 9).toFixed(1)}"
-        class="chart-tip" text-anchor="${n === 1 ? "middle" : "end"}">${fmt(coords[n - 1].v)}</text>`;
-
-    return `
-    <svg viewBox="0 0 ${W} ${H}" class="chart-svg" preserveAspectRatio="none" role="img" aria-label="Curva da melhor série">
-        <defs>
-            <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="var(--green)" stop-opacity="0.26"/>
-                <stop offset="100%" stop-color="var(--green-deep)" stop-opacity="0"/>
-            </linearGradient>
-        </defs>
-        <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" class="chart-axis"/>
-        <path d="${area}" fill="url(#chartFill)"/>
-        <path d="${line}" class="chart-line" fill="none"/>
-        ${dots}
-        ${lastLabel}
-        <text x="${padL}" y="${H - 6}" class="chart-min">${fmt(min)}</text>
-        <text x="${W - padR}" y="${H - 6}" class="chart-max" text-anchor="end">${fmt(max)}</text>
-    </svg>`;
-}
-
-/* =========================================================
    RENDER — TELA SEMANA
 ========================================================= */
 function renderSemana() {
     const now = new Date();
     const mon = startOfWeekMonday(now);
     const todayK = todayKey();
+    const cardios = cardioList();
 
     const grid = $("#week-grid");
     grid.innerHTML = "";
     let pesadosFeitos = 0;
+    let cardiosSemana = 0;
 
     for (let i = 0; i < 7; i++) {
         const d = new Date(mon);
@@ -822,12 +599,15 @@ function renderSemana() {
         const tipo = dayType(d);
         const daySessions = sessions.filter((s) => dateKey(s.data) === dk);
         const treinado = daySessions.length > 0;
-        pesadosFeitos += daySessions.length; // sessão registrada = treino pesado, mesmo fora do dia programado
+        const cardioFeito = cardios.includes(dk);
+        pesadosFeitos += daySessions.length;
+        if (cardioFeito) cardiosSemana++;
 
         const cell = document.createElement("div");
         cell.className = "wk-cell";
         if (dk === todayK) cell.classList.add("is-today");
         if (treinado) cell.classList.add("is-done");
+        if (cardioFeito) cell.classList.add("is-cardio");
         if (tipo !== "pesado") cell.classList.add("is-soft");
 
         const mark = treinado ? daySessions.map((s) => s.treino).join("+")
@@ -836,13 +616,17 @@ function renderSemana() {
         cell.innerHTML = `
             <span class="wk-day">${WEEKDAY_PT[d.getDay()]}</span>
             <span class="wk-mark">${mark}</span>
-            <span class="wk-date">${pad2(d.getDate())}</span>`;
+            <span class="wk-date">${pad2(d.getDate())}</span>
+            <span class="wk-flame">${cardioFeito ? "軽" : ""}</span>`;
         grid.appendChild(cell);
     }
 
     $("#week-count").textContent = pesadosFeitos;
     const rail = $("#week-count-bar");
     if (rail) rail.style.width = Math.min(100, (pesadosFeitos / 4) * 100) + "%";
+    $("#week-cardio").textContent = cardiosSemana > 0
+        ? `軽 ${cardiosSemana} ${cardiosSemana === 1 ? "cardio" : "cardios"} nesta semana`
+        : "軽 nenhum cardio registrado nesta semana";
 
     $("#week-total").textContent = sessions.length;
 }
@@ -872,36 +656,26 @@ function wireEvents() {
 
     $("#btn-save").addEventListener("click", saveSession);
 
-    $("#prog-select").addEventListener("change", (e) => {
-        state.progEx = e.target.value;
-        renderProgresso();
-    });
-
     $("#go-close").addEventListener("click", () => {
         $("#gate-overlay").hidden = true;
         document.body.classList.remove("overlay-open");
     });
 
     $("#btn-clear").addEventListener("click", () => {
-        if (!sessions.length) { toast("Nada para apagar."); return; }
+        if (!sessions.length && !cardioList().length) { toast("Nada para apagar."); return; }
         if (confirm("Apagar TODOS os registros? Os portões se fecham. Esta ação não tem volta.")) {
             store.clear();
             sessions = [];
-            state.draft = {};
-            state.domTreino = null;
-            buildProgressoOptions();
             renderTreino();
             renderSemana();
-            renderProgresso();
             toast("Registros apagados. Recomece do Kaimon.");
         }
     });
 }
 
-/* Parallax sutil no herói (imagem + render). */
+/* Parallax sutil no herói. */
 function setupParallax() {
     const bg = $(".hero-bg");
-    const render = $(".hero-render");
     if (!bg || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let ticking = false;
     const onScroll = () => {
@@ -909,7 +683,6 @@ function setupParallax() {
         ticking = true;
         requestAnimationFrame(() => {
             bg.style.transform = `translate3d(0, ${window.scrollY * 0.18}px, 0) scale(1.06)`;
-            if (render) render.style.transform = `translate3d(0, ${window.scrollY * 0.10}px, 0)`;
             ticking = false;
         });
     };
@@ -923,8 +696,6 @@ function setupParallax() {
 function checkDayRollover() {
     if (todayKey() === state.renderedDay) return;
     state.renderedDay = todayKey();
-    state.draft = {};
-    state.domTreino = null;
     state.treino = suggestedTreino(new Date());
     renderTopbar();
     setScreen(state.screen); // re-renderiza a tela ativa com o dia novo
@@ -941,10 +712,8 @@ function init() {
     if (store.getCelebrated() < gatesOpen()) store.setCelebrated(gatesOpen());
 
     renderTopbar();
-    buildProgressoOptions();
     wireEvents();
-    renderTreino();
-    setScreen("treino");
+    setScreen("treino"); // abre já no treino sugerido do dia
     setupParallax();
 
     document.addEventListener("visibilitychange", () => {

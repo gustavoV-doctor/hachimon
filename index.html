@@ -71,30 +71,11 @@
 
             <div id="finisher-wrap"></div>
 
+            <div id="cardio-wrap"></div>
+
             <div class="save-bar">
-                <button class="btn-primary" id="btn-save">REGISTRAR SESSÃO</button>
+                <button class="btn-primary" id="btn-save">TREINO FEITO — REGISTRAR</button>
             </div>
-        </section>
-
-        <!-- ============ TELA: PROGRESSÃO ============ -->
-        <section class="screen" data-screen="progresso" id="screen-progresso">
-            <div class="sec-head">
-                <span class="sec-eyebrow">O TERMÔMETRO</span>
-                <h2 class="sec-title">Progressão <span class="sec-kanji">伸</span></h2>
-            </div>
-
-            <div class="prog-select-wrap">
-                <select id="prog-select" aria-label="Escolher exercício"></select>
-            </div>
-
-            <div class="prog-stats" id="prog-stats"></div>
-
-            <div class="prog-chart-wrap">
-                <div class="prog-chart-label" id="prog-chart-label">Melhor série · kg</div>
-                <div id="prog-chart"></div>
-            </div>
-
-            <div class="prog-history" id="prog-history"></div>
         </section>
 
         <!-- ============ TELA: PORTÕES ============ -->
@@ -152,6 +133,7 @@
                     <span class="week-count-label">treinos<br>pesados</span>
                 </div>
                 <div class="week-count-rail"><div class="week-count-bar" id="week-count-bar"></div></div>
+                <p class="week-cardio" id="week-cardio"></p>
             </div>
 
             <div class="week-grid" id="week-grid"></div>
@@ -205,7 +187,6 @@
 
     <nav class="tabbar" aria-label="Navegação">
         <button class="tab is-active" data-screen="treino"><span class="tab-k">鍛</span>Treino</button>
-        <button class="tab" data-screen="progresso"><span class="tab-k">伸</span>Progresso</button>
         <button class="tab" data-screen="portoes"><span class="tab-k">門</span>Portões</button>
         <button class="tab" data-screen="semana"><span class="tab-k">週</span>Semana</button>
     </nav>

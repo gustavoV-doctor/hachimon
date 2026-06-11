@@ -2,7 +2,7 @@
 
 > O trabalho duro supera o talento. 「努力は天才に勝る。」
 
-Tracker de treino híbrido inspirado no Maito Gai (Naruto). PWA client-side puro — sem backend, sem dependências, dados no `localStorage` do aparelho.
+Planilha de treino híbrido inspirada no Maito Gai (Naruto). PWA client-side puro — sem backend, sem dependências, dados no `localStorage` do aparelho. Abre já no treino do dia; toque risca o exercício feito; um botão registra o treino (abre portões) e outro marca o cardio do dia (conta separado).
 
 ## O programa
 
