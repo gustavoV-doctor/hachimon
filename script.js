@@ -74,7 +74,7 @@ const PROGRAM = {
                 { nome: "Elevação pélvica (hip thrust)", series: 3, reps: [8, 12], tipo: "composto", musculo: "glúteo", descanso: "90 s–2 min", nota: "Pausa de 1s no topo com pelve neutra. Monte no Smith pra agilizar o setup; sem paciência pro setup → búlgaro com mais carga e elevação pélvica unilateral no banco." },
                 { nome: "Agachamento búlgaro com halteres", series: 3, reps: [8, 10], tipo: "composto", musculo: "quadríceps · glúteo", descanso: "90 s após as duas pernas", nota: "Reps POR PERNA, comece pela mais fraca. Tronco inclinado = mais glúteo; ereto = mais quadríceps." },
                 { nome: "Cadeira extensora", series: 3, reps: [12, 15], tipo: "isolado", musculo: "quadríceps", descanso: "60 s", nota: "Segure 1s no topo. Semana ruim de plantão/sono? Este é o primeiro exercício a cortar — válvula oficial do programa." },
-                { nome: "Cadeira flexora", series: 3, reps: [12, 15], tipo: "isolado", musculo: "posterior", descanso: "60 s", nota: "Segunda dose semanal de flexão de joelho — curva de resistência que o RDL não cobre." },
+                { nome: "Cadeira flexora (reps altas)", series: 3, reps: [12, 15], tipo: "isolado", musculo: "posterior", descanso: "60 s", nota: "Segunda dose semanal de flexão de joelho — curva de resistência que o RDL não cobre." },
                 { nome: "Panturrilha sentado", series: 4, reps: [12, 20], tipo: "isolado", musculo: "panturrilha · sóleo", descanso: "45–60 s", nota: "Joelho dobrado pega o sóleo — complementa a panturrilha em pé de quinta." },
                 { nome: "Elevação de pernas (suspenso ou banco)", series: 3, reps: [10, 15], tipo: "core", musculo: "core", descanso: "60 s", nota: "Enrole o quadril no final, sem balanço." }
             ],
@@ -206,7 +206,11 @@ const store = {
         try {
             const raw = localStorage.getItem(STORE_KEY);
             const arr = raw ? JSON.parse(raw) : [];
-            return Array.isArray(arr) ? arr : [];
+            if (!Array.isArray(arr)) return [];
+            // Item malformado não pode derrubar o app inteiro.
+            return arr.filter((s) => s && typeof s === "object"
+                && s.series && typeof s.series === "object"
+                && (s.treino in PROGRAM.treinos));
         } catch (e) {
             console.warn("Hachimon: falha ao ler registros, seguindo em memória.", e);
             return [];
@@ -324,8 +328,40 @@ const state = {
     screen: "treino",
     treino: suggestedTreino(new Date()),
     progEx: null,
-    finisherDone: false
+    finisherDone: false,
+    draft: {},          // treino -> { series, finisher } digitado e ainda não salvo
+    domTreino: null,    // treino cujos cards estão materializados no DOM
+    renderedDay: todayKey()
 };
+
+/** Lê os inputs atuais do DOM (mesma coleta do save). */
+function collectInputs(t) {
+    const treino = PROGRAM.treinos[t];
+    const series = {};
+    let hasData = false;
+    treino.exercicios.forEach((ex) => {
+        const rows = $$(`.set-row[data-ex="${ex.id}"]`);
+        if (!rows.length) return;
+        series[ex.id] = rows.map((row) => {
+            const cargaEl = $(".set-carga", row);
+            const repsEl = $(".set-reps", row);
+            const carga = cargaEl && cargaEl.value !== ""
+                ? parseFloat(cargaEl.value.replace(",", ".")) : null;
+            const reps = repsEl && repsEl.value !== "" ? parseInt(repsEl.value, 10) : null;
+            if (carga != null || reps != null) hasData = true;
+            return { carga: isNaN(carga) ? null : carga, reps: isNaN(reps) ? null : reps };
+        });
+    });
+    return { series, hasData };
+}
+
+/** Guarda o que está digitado como rascunho antes de re-renderizar. */
+function collectDraft(t) {
+    if (!t || !PROGRAM.treinos[t]) return;
+    const got = collectInputs(t);
+    if (!Object.keys(got.series).length) return;
+    state.draft[t] = { series: got.series, finisher: state.finisherDone };
+}
 
 /* =========================================================
    RENDER — TOPO E NAV
@@ -345,13 +381,17 @@ function setScreen(name) {
     if (name === "semana") renderSemana();
     if (name === "treino") renderTreino();
     if (name === "portoes") renderPortoes();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
 }
 
 /* =========================================================
    RENDER — TELA TREINO
 ========================================================= */
 function renderTreino() {
+    // Preserva o que está digitado e não foi salvo antes de destruir o DOM.
+    collectDraft(state.domTreino);
+
     const now = new Date();
     const tipo = dayType(now);
     const t = state.treino;
@@ -397,9 +437,10 @@ function renderTreino() {
         }
     }
 
-    // Cards de exercício
+    // Cards de exercício — rascunho digitado tem precedência sobre a sessão salva
     const saved = todaysSession(t);
-    state.finisherDone = !!(saved && saved.finisher);
+    const draft = state.draft[t] || null;
+    state.finisherDone = draft ? !!draft.finisher : !!(saved && saved.finisher);
     const wrap = $("#exercicios");
     wrap.innerHTML = "";
 
@@ -407,7 +448,7 @@ function renderTreino() {
         const metric = exMetric(ex);
         const last = lastEntry(ex.id);
         const lastSets = last ? (last.series[ex.id] || []) : [];
-        const savedSets = saved ? (saved.series[ex.id] || []) : [];
+        const savedSets = draft ? (draft.series[ex.id] || []) : (saved ? (saved.series[ex.id] || []) : []);
         const subir = shouldIncreaseLoad(ex);
         const esquema = ex.porTempo ? `${ex.series} × tempo`
             : `${ex.series} × ${ex.reps[0]}–${ex.reps[1]}`;
@@ -423,7 +464,7 @@ function renderTreino() {
             const ref = lv && (lv.carga != null || lv.reps != null)
                 ? `últ. ${refText(lv, metric, true)}`
                 : "primeira vez";
-            const cargaVal = sv.carga != null ? sv.carga : "";
+            const cargaVal = sv.carga != null ? String(sv.carga).replace(".", ",") : "";
             const repsVal = sv.reps != null ? sv.reps : "";
 
             if (metric === "tempo") {
@@ -442,7 +483,7 @@ function renderTreino() {
                 <div class="set-row" data-ex="${ex.id}" data-set="${s}">
                     <span class="set-idx">${s + 1}</span>
                     <label class="set-field">
-                        <input class="set-carga" type="number" inputmode="decimal" min="0" step="0.5"
+                        <input class="set-carga" type="text" inputmode="decimal" autocomplete="off"
                             placeholder="0" value="${cargaVal}" aria-label="Carga série ${s + 1}">
                         <span class="set-unit">kg</span>
                     </label>
@@ -472,6 +513,8 @@ function renderTreino() {
 
         wrap.appendChild(card);
     });
+
+    state.domTreino = t;
 
     // Finisher do dia
     renderFinisher(treino);
@@ -514,22 +557,7 @@ function refText(set, metric, compact = false) {
 /** Coleta os inputs e salva a sessão atual. */
 function saveSession() {
     const t = state.treino;
-    const treino = PROGRAM.treinos[t];
-    const series = {};
-    let hasData = false;
-
-    treino.exercicios.forEach((ex) => {
-        const rows = $$(`.set-row[data-ex="${ex.id}"]`);
-        const arr = rows.map((row) => {
-            const cargaEl = $(".set-carga", row);
-            const repsEl = $(".set-reps", row);
-            const carga = cargaEl && cargaEl.value !== "" ? parseFloat(cargaEl.value) : null;
-            const reps = repsEl && repsEl.value !== "" ? parseInt(repsEl.value, 10) : null;
-            if (carga != null || reps != null) hasData = true;
-            return { carga: isNaN(carga) ? null : carga, reps: isNaN(reps) ? null : reps };
-        });
-        series[ex.id] = arr;
-    });
+    const { series, hasData } = collectInputs(t);
 
     if (!hasData) {
         toast("Registre ao menos uma série antes de salvar.");
@@ -547,6 +575,7 @@ function saveSession() {
     };
 
     const ok = commitSession(sess);
+    if (ok) delete state.draft[t];
     toast(ok ? "Sessão registrada. 押忍!" : "Salvo só nesta sessão (storage indisponível).");
     renderTreino();
     buildProgressoOptions();
@@ -638,6 +667,7 @@ function celebrateGate(gate) {
     $("#go-quote").textContent = gate.quote;
     ov.classList.toggle("is-death", gate.n === 8);
     ov.hidden = false;
+    document.body.classList.add("overlay-open");
     store.setCelebrated(gate.n);
 }
 
@@ -678,7 +708,7 @@ function renderProgresso() {
     const points = hist.map((s) => {
         const best = bestSet(s.series[ex.id], metric);
         return { date: s.data, best, value: setValue(best, metric) };
-    }).filter((p) => p.best);
+    }).filter((p) => p.best && (metric !== "kg" || p.value > 0));
 
     const statsWrap = $("#prog-stats");
     const chartWrap = $("#prog-chart");
@@ -790,9 +820,9 @@ function renderSemana() {
         d.setDate(mon.getDate() + i);
         const dk = dateKey(d);
         const tipo = dayType(d);
-        const sess = sessions.find((s) => dateKey(s.data) === dk);
-        const treinado = !!sess;
-        if (treinado) pesadosFeitos++; // sessão registrada = treino pesado, mesmo fora do dia programado
+        const daySessions = sessions.filter((s) => dateKey(s.data) === dk);
+        const treinado = daySessions.length > 0;
+        pesadosFeitos += daySessions.length; // sessão registrada = treino pesado, mesmo fora do dia programado
 
         const cell = document.createElement("div");
         cell.className = "wk-cell";
@@ -800,12 +830,12 @@ function renderSemana() {
         if (treinado) cell.classList.add("is-done");
         if (tipo !== "pesado") cell.classList.add("is-soft");
 
-        const mark = treinado ? sess.treino
+        const mark = treinado ? daySessions.map((s) => s.treino).join("+")
             : (tipo === "pesado" ? PROGRAM.agenda.pesados[d.getDay()].charAt(0) + "·"
                 : tipo === "recuperacao" ? "休" : "軽");
         cell.innerHTML = `
             <span class="wk-day">${WEEKDAY_PT[d.getDay()]}</span>
-            <span class="wk-mark">${treinado ? sess.treino : mark}</span>
+            <span class="wk-mark">${mark}</span>
             <span class="wk-date">${pad2(d.getDate())}</span>`;
         grid.appendChild(cell);
     }
@@ -847,13 +877,18 @@ function wireEvents() {
         renderProgresso();
     });
 
-    $("#go-close").addEventListener("click", () => { $("#gate-overlay").hidden = true; });
+    $("#go-close").addEventListener("click", () => {
+        $("#gate-overlay").hidden = true;
+        document.body.classList.remove("overlay-open");
+    });
 
     $("#btn-clear").addEventListener("click", () => {
         if (!sessions.length) { toast("Nada para apagar."); return; }
         if (confirm("Apagar TODOS os registros? Os portões se fecham. Esta ação não tem volta.")) {
             store.clear();
             sessions = [];
+            state.draft = {};
+            state.domTreino = null;
             buildProgressoOptions();
             renderTreino();
             renderSemana();
@@ -883,6 +918,19 @@ function setupParallax() {
 }
 
 /* =========================================================
+   VIRADA DE DIA — PWA suspenso no app switcher não recarrega
+========================================================= */
+function checkDayRollover() {
+    if (todayKey() === state.renderedDay) return;
+    state.renderedDay = todayKey();
+    state.draft = {};
+    state.domTreino = null;
+    state.treino = suggestedTreino(new Date());
+    renderTopbar();
+    setScreen(state.screen); // re-renderiza a tela ativa com o dia novo
+}
+
+/* =========================================================
    INIT
 ========================================================= */
 function init() {
@@ -898,6 +946,11 @@ function init() {
     renderTreino();
     setScreen("treino");
     setupParallax();
+
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) checkDayRollover();
+    });
+    window.addEventListener("pageshow", checkDayRollover);
 }
 
 document.addEventListener("DOMContentLoaded", init);
